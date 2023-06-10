@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"flag"
 	"fmt"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/Azure/azure-sdk-for-go/sdk/data/azcosmos"
@@ -12,10 +13,14 @@ import (
 	"github.com/yousuf64/shift"
 	"log"
 	"net/http"
+	"os"
+	"os/signal"
 	"strconv"
 	"sync"
 	"time"
 )
+
+const HeaderBucketId = "x-bucket-id"
 
 type Metadata struct {
 	Counter   uint64
@@ -33,7 +38,52 @@ type Response struct {
 	Uid uint64 `json:"uid"`
 }
 
+type ErrorResponse struct {
+	Status       int    `json:"-"`
+	ErrorMessage string `json:"error"`
+}
+
+func NewErrorResponse(status int, message string) ErrorResponse {
+	return ErrorResponse{status, message}
+}
+
+func (e ErrorResponse) Error() string {
+	return e.ErrorMessage
+}
+
+func ErrorHandler(next shift.HandlerFunc) shift.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request, route shift.Route) error {
+		err := next(w, r, route)
+		if err != nil {
+			errResp, ok := err.(ErrorResponse)
+			if !ok {
+				errResp.Status = http.StatusInternalServerError
+				errResp.ErrorMessage = err.Error()
+			}
+
+			w.Header().Add("Content-Type", "application/json")
+			w.WriteHeader(errResp.Status)
+			if encodeErr := json.NewEncoder(w).Encode(err); encodeErr != nil {
+				_, _ = w.Write([]byte("error encoding failed"))
+			}
+		}
+		return nil
+	}
+}
+
 func main() {
+	port := flag.Int("port", 0, "server http port")
+	flag.Parse()
+
+	if *port == 0 {
+		log.Fatal("specify --port flag")
+	}
+
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	defer stop()
+
+	idleConnsClosed := make(chan struct{})
+
 	cache, err := lru.New[string, *Metadata](128)
 	if err != nil {
 		log.Fatal(cache)
@@ -43,8 +93,18 @@ func main() {
 	countersContainer, err := client.NewContainer("unique-id", "counters")
 
 	r := shift.New()
+	r.Use(ErrorHandler)
 	r.GET("/generate-uid/:bucketId", func(w http.ResponseWriter, r *http.Request, route shift.Route) error {
+		headerBuckerId := r.Header.Get(HeaderBucketId)
+		if headerBuckerId == "" {
+			return NewErrorResponse(http.StatusBadRequest, fmt.Sprintf("%s expected in the header", HeaderBucketId))
+		}
+
 		bucketId := route.Params.Get("bucketId")
+		if headerBuckerId != bucketId {
+			return NewErrorResponse(http.StatusBadRequest, fmt.Sprintf("%s should match the :bucketId in the route", HeaderBucketId))
+		}
+
 		_, err := uuid.Parse(bucketId)
 		if err != nil {
 			log.Printf("failed to parse bucketId: %s\n", bucketId)
@@ -104,6 +164,9 @@ func main() {
 			md.Mu.Lock()
 		}
 
+		if md.Counter >= 999999 {
+			return ErrorResponse{http.StatusConflict, "that's it for today :|"}
+		}
 		if ok := isSameDate(md.Timestamp, time.Now()); ok {
 			md.Counter++
 			log.Printf("incremented counter for bucketId: %s\n", bucketId)
@@ -141,17 +204,45 @@ func main() {
 		}
 
 		resp := Response{Uid: uint64(uid)}
-		err = json.NewEncoder(w).Encode(resp)
-		if err != nil {
-			log.Printf("error encoding response for bucketId: %s\n", bucketId)
-			return err
-		}
-		log.Printf("wrote %d for bucketId: %s\n", resp.Uid, bucketId)
-		return nil
+		log.Printf("replying %+v", resp)
+		return Reply200(w, resp)
 	})
-	if err := http.ListenAndServe(":3000", r.Serve()); err != nil {
+
+	log.Printf("listening on port: %d", *port)
+	server := http.Server{
+		Addr:    fmt.Sprintf(":%d", *port),
+		Handler: r.Serve(),
+	}
+
+	go func() {
+		<-ctx.Done()
+
+		log.Println("starting graceful shutdown")
+		if err := server.Shutdown(context.Background()); err != nil {
+			log.Printf("graceful shutdown failed: %v\n", err)
+			return
+		}
+
+		log.Println("closed all listeners and connections")
+		close(idleConnsClosed)
+	}()
+
+	if err := server.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
+
+	<-idleConnsClosed
+}
+
+func Reply200(w http.ResponseWriter, response any) error {
+	w.Header().Add("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+	err := json.NewEncoder(w).Encode(response)
+	if err != nil {
+		log.Print("failed to encode the response")
+		return err
+	}
+	return nil
 }
 
 func isSameDate(t1, t2 time.Time) bool {
