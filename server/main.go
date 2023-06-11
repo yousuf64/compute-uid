@@ -9,6 +9,9 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"unique-id-generator/server/flusher"
+	"unique-id-generator/server/flusherplane"
+	"unique-id-generator/server/persistence"
 	"unique-id-generator/server/server"
 	"unique-id-generator/server/uidgen"
 )
@@ -35,7 +38,12 @@ func main() {
 
 	client := CosmosClient()
 	countersContainer, err := client.NewContainer("unique-id", "counters")
-	uidGen := uidgen.New(cache, countersContainer, logger)
+	prs := persistence.New(countersContainer, logger)
+	invalidateBucketChan := make(chan flusher.InvalidateBucketMessage)
+	updateETagChan := make(chan flusher.UpdateETagMessage)
+
+	fp := flusherplane.New(2, prs, invalidateBucketChan, updateETagChan, logger)
+	uidGen := uidgen.New(cache, prs, fp, invalidateBucketChan, updateETagChan, logger)
 
 	srv := http.Server{
 		Addr:    fmt.Sprintf(":%d", *port),

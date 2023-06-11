@@ -2,41 +2,87 @@ package uidgen
 
 import (
 	"context"
-	"encoding/json"
 	"errors"
 	"fmt"
-	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
-	"github.com/Azure/azure-sdk-for-go/sdk/data/azcosmos"
 	"github.com/hashicorp/golang-lru/v2"
 	"log"
-	"net/http"
 	"strconv"
 	"sync"
 	"time"
+	"unique-id-generator/server/flusher"
+	"unique-id-generator/server/flusherplane"
+	"unique-id-generator/server/persistence"
 )
 
 var ErrMaxLimitReached = errors.New("reached maximum for the day")
 
 type Metadata struct {
-	Counter   uint64
-	Mu        sync.Mutex
-	Timestamp time.Time
-}
+	mu *sync.Mutex
 
-type CounterItem struct {
-	Id        string `json:"id"`
-	Counter   uint64 `json:"counter"`
-	Timestamp uint64 `json:"_ts"`
+	*persistence.Counter
 }
 
 type UIDGen struct {
-	cache     *lru.Cache[string, *Metadata]
-	container *azcosmos.ContainerClient
-	logger    *log.Logger
+	cache                *lru.Cache[string, *Metadata]
+	persistence          *persistence.Persistence
+	fp                   *flusherplane.FlusherPlane
+	invalidateBucketChan <-chan flusher.InvalidateBucketMessage
+	updateETagChan       <-chan flusher.UpdateETagMessage
+	logger               *log.Logger
 }
 
-func New(cache *lru.Cache[string, *Metadata], container *azcosmos.ContainerClient, logger *log.Logger) *UIDGen {
-	return &UIDGen{cache, container, logger}
+func New(
+	cache *lru.Cache[string, *Metadata],
+	persistence *persistence.Persistence,
+	fp *flusherplane.FlusherPlane,
+	invalidateBucketChan <-chan flusher.InvalidateBucketMessage,
+	updateETagChan <-chan flusher.UpdateETagMessage,
+	logger *log.Logger,
+) *UIDGen {
+	gen := &UIDGen{
+		cache:                cache,
+		persistence:          persistence,
+		fp:                   fp,
+		invalidateBucketChan: invalidateBucketChan,
+		updateETagChan:       updateETagChan,
+		logger:               logger,
+	}
+
+	go gen.listenInvalidateBucketMsg()
+	go gen.listenUpdateETagMsg()
+	return gen
+}
+
+func (u *UIDGen) listenInvalidateBucketMsg() {
+	for msg := range u.invalidateBucketChan {
+		md, ok := u.cache.Get(msg.BucketId)
+		if ok {
+			md.mu.Lock()
+			go func() {
+				counter, err := u.persistence.GetCounter(context.Background(), msg.BucketId)
+				switch err {
+				case nil:
+					u.logger.Printf("[FLUSH] retrieved latest counter [bucketId: %s]\n", msg.BucketId)
+					md.Counter = counter
+				default:
+					u.logger.Printf("[FLUSH] failed to get counter, dumping counter from cache... [bucketId: %s]\n", msg.BucketId)
+					u.cache.Remove(msg.BucketId)
+				}
+				md.mu.Unlock()
+			}()
+		}
+	}
+}
+
+func (u *UIDGen) listenUpdateETagMsg() {
+	for msg := range u.updateETagChan {
+		md, ok := u.cache.Get(msg.BucketId)
+		if ok {
+			md.mu.Lock()
+			md.ETag = msg.ETag
+			md.mu.Unlock()
+		}
+	}
 }
 
 func (u *UIDGen) Generate(bucketId string) (uint64, error) {
@@ -45,86 +91,57 @@ func (u *UIDGen) Generate(bucketId string) (uint64, error) {
 		u.logger.Printf("cache miss for bucketId: %s\n", bucketId)
 		// Read from cosmos.
 		md = &Metadata{
-			Counter:   0,
-			Mu:        sync.Mutex{},
-			Timestamp: time.Now(),
+			mu:      &sync.Mutex{},
+			Counter: nil,
 		}
 
 		u.logger.Printf("writing empty metadata on cache for bucketId: %s\n", bucketId)
 		if peekMd, found, _ := u.cache.PeekOrAdd(bucketId, md); found {
 			u.logger.Printf("found entry on cache peek for bucketId: %s\n", bucketId)
 			md = peekMd
-			md.Mu.Lock() // Pauses racing goroutines.
+			md.mu.Lock() // Pauses racing goroutines.
 			// TODO: Handle scenario where md is removed from cache.
 		} else {
 			// Newly written.
 			u.logger.Printf("found newly created entry on cache peek for bucketId: %s\n", bucketId)
-			md.Mu.Lock() // Pauses racing goroutines.
+			md.mu.Lock() // Pauses racing goroutines.
 
-			pk := azcosmos.NewPartitionKeyString(bucketId)
-			u.logger.Printf("reading item from cosmos partitionKey: %s, id: %s\n", bucketId, bucketId)
-			response, err := u.container.ReadItem(context.Background(), pk, bucketId, nil)
-			if err != nil {
-				var responseErr *azcore.ResponseError
-				errors.As(err, &responseErr)
-				if responseErr == nil || responseErr.StatusCode != http.StatusNotFound {
-					u.cache.Remove(bucketId)
-					md.Mu.Unlock()
-					u.logger.Printf("failed to read item from cosmos for partitionKey: %s, id: %s, err: %v\n", bucketId, bucketId, err)
-					return 0, err
+			counter, err := u.persistence.GetCounter(context.Background(), bucketId)
+			switch err {
+			case nil:
+				md.Counter = counter
+			case persistence.ErrCounterNotFound:
+				md.Counter = &persistence.Counter{
+					Id:        bucketId,
+					Counter:   0,
+					Timestamp: time.Now(),
+					ETag:      "",
 				}
-				u.logger.Printf("item not found in cosmos for partitionKey: %s, id: %s\n", bucketId, bucketId)
-			} else {
-				var counterItem *CounterItem
-				err = json.NewDecoder(response.RawResponse.Body).Decode(&counterItem)
-				if err != nil {
-					u.cache.Remove(bucketId)
-					md.Mu.Unlock()
-					u.logger.Printf("failed to decode CounterItem from cosmos for partitionKey: %s, id: %s\n", bucketId, bucketId)
-					return 0, err
-				}
-				u.logger.Printf("decoded CounterItem %+v for partitionKey: %s, id: %s\n", *counterItem, bucketId, bucketId)
-				md.Counter = counterItem.Counter
-				md.Timestamp = time.Unix(int64(counterItem.Timestamp), 0)
+			default:
+				u.cache.Remove(bucketId)
+				return 0, err
 			}
 		}
 	} else {
 		u.logger.Printf("cache pass for bucketId %s\n", bucketId)
-		md.Mu.Lock()
+		md.mu.Lock()
 	}
 
-	if md.Counter >= 999999 {
+	if md.Counter.Counter >= 999999 {
 		return 0, ErrMaxLimitReached
 	}
 	if ok := isSameDate(md.Timestamp, time.Now()); ok {
-		md.Counter++
+		md.Counter.Counter++
 		log.Printf("incremented counter for bucketId: %s\n", bucketId)
 	} else {
 		md.Timestamp = time.Now()
-		md.Counter = 1
+		md.Counter.Counter = 1
 		log.Printf("reset counter for bucketId: %s\n", bucketId)
 	}
-	go func() {
-		log.Printf("preparing to flush counter for bucketId: %s\n", bucketId)
-		counterItem := CounterItem{
-			Id:      bucketId,
-			Counter: md.Counter,
-		}
-		b, err := json.Marshal(counterItem)
-		if err != nil {
-			log.Println("[FLUSH] failed to marshal in goroutine")
-			return
-		}
-		pk := azcosmos.NewPartitionKeyString(bucketId)
-		_, err = u.container.UpsertItem(context.Background(), pk, b, nil)
-		if err != nil {
-			log.Printf("[FLUSH] failed to upsert item for partitionKey: %v, id: %s\n", pk, counterItem.Id)
-			return
-		}
-		log.Printf("[FLUSH] successfully flushed partitionKey: %v, id: %s\n", pk, counterItem.Id)
-	}()
-	counter := md.Counter
-	md.Mu.Unlock()
+
+	counter := md.Counter.Counter
+	u.fp.Add(bucketId, md.Counter)
+	md.mu.Unlock()
 
 	yyyy, mm, dd := md.Timestamp.Date()
 	uid, err := strconv.Atoi(fmt.Sprintf("%d%02d%02d%06d", yyyy, mm, dd, counter))
@@ -138,3 +155,6 @@ func (u *UIDGen) Generate(bucketId string) (uint64, error) {
 func isSameDate(t1, t2 time.Time) bool {
 	return t1.UTC().Truncate(time.Hour * 24).Equal(t2.UTC().Truncate(time.Hour * 24))
 }
+
+// TODO: Handle stale cached counter
+// TODO: Another node could have a stale counter for the bucket (who may again end up being the handler), handle it
