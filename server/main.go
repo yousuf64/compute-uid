@@ -11,6 +11,7 @@ import (
 	"os/signal"
 	"unique-id-generator/server/flusher"
 	"unique-id-generator/server/flusherplane"
+	"unique-id-generator/server/flusherrecovery"
 	"unique-id-generator/server/persistence"
 	"unique-id-generator/server/server"
 	"unique-id-generator/server/uidgen"
@@ -39,6 +40,10 @@ func main() {
 	client := CosmosClient()
 	countersContainer, err := client.NewContainer("unique-id", "counters")
 	prs := persistence.New(countersContainer, logger)
+
+	frec := flusherrecovery.New(prs, logger)
+	frec.Recover()
+
 	invalidateBucketChan := make(chan flusher.InvalidateBucketMessage)
 	updateETagChan := make(chan flusher.UpdateETagMessage)
 

@@ -123,7 +123,7 @@ func (u *UIDGen) Generate(bucketId string) (uint64, error) {
 			}
 		}
 	} else {
-		u.logger.Printf("cache pass for bucketId %s\n", bucketId)
+		u.logger.Printf("cache hit for bucketId %s\n", bucketId)
 		md.mu.Lock()
 	}
 
