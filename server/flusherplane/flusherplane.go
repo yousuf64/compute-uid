@@ -77,7 +77,7 @@ func New(size int, p *persistence.Persistence, invalidateBucketChan chan<- flush
 	return fp
 }
 
-func (fp *FlusherPlane) Add(bucketId string, counter *persistence.Counter) {
+func (fp *FlusherPlane) Add(bucketId string, counter *persistence.Bucket) {
 	hash := maphash.String(fp.seed, bucketId)
 	idx := hash % uint64(len(fp.flushers))
 	fext := fp.flushers[idx]

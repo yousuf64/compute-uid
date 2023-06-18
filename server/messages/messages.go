@@ -2,11 +2,13 @@ package messages
 
 import (
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
+	"time"
 )
 
 type UpdateCounterMessage struct {
-	BucketId string
-	Counter  uint64
+	BucketId  string
+	Counter   uint64
+	Timestamp time.Time
 }
 
 type UpdateETagMessage struct {
@@ -27,4 +29,9 @@ type FlushQueueMessage struct {
 type BucketData struct {
 	Counter uint64
 	ETag    azcore.ETag
+}
+
+type InvalidateBucketMessage struct {
+	BucketId string
+	Data     *BucketData
 }

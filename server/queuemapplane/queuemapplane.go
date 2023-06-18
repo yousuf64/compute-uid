@@ -5,14 +5,14 @@ import (
 	"hash/maphash"
 	"log"
 	"sync"
+	"unique-id-generator/server/channels"
 	"unique-id-generator/server/messages"
 	"unique-id-generator/server/queuemap"
-	"unique-id-generator/server/streams"
 )
 
 type chanTuple struct {
-	QueueChan chan<- messages.UpdateCounterMessage
-	ETagChan  chan<- messages.UpdateETagMessage
+	QueueChan chan<- *messages.UpdateCounterMessage
+	ETagChan  chan<- *messages.UpdateETagMessage
 }
 
 type queueMapPlane struct {
@@ -52,24 +52,20 @@ func Listen(size int, logger *log.Logger) {
 }
 
 func (qmp *queueMapPlane) listener() {
-	for m := range streams.UpdateCounterMessage {
-		go func(msg messages.UpdateCounterMessage) {
-			qmp.logger.Printf("[QueueMapPlane] Received message BucketId: %s, Counter: %v\n", msg.BucketId, msg.Counter)
-			idx := qmp.hashIdx(msg.BucketId)
-			qmp.logger.Printf("[QueueMapPlane] Delegating message to QM: %s, BucketId: %s, Counter: %v\n", qmp.mapids[idx], msg.BucketId, msg.Counter)
-			qmp.maps[idx].QueueChan <- msg
-		}(m)
+	for msg := range channels.UpdateCounter {
+		qmp.logger.Printf("[QueueMapPlane] Received UpdateCounterMessage BucketId: %s, Counter: %v\n", msg.BucketId, msg.Counter)
+		idx := qmp.hashIdx(msg.BucketId)
+		qmp.logger.Printf("[QueueMapPlane] Delegating UpdateCounterMessage to QM: %s, BucketId: %s, Counter: %v\n", qmp.mapids[idx], msg.BucketId, msg.Counter)
+		qmp.maps[idx].QueueChan <- msg
 	}
 }
 
 func (qmp *queueMapPlane) etagListener() {
-	for m := range streams.UpdateETagMessage {
-		go func(msg messages.UpdateETagMessage) {
-			qmp.logger.Printf("[QueueMapPlane] Received message BucketId: %s, ETag: %s\n", msg.BucketId, msg.ETag)
-			idx := qmp.hashIdx(msg.BucketId)
-			qmp.logger.Printf("[QueueMapPlane] Delegating message to QM: %s, BucketId: %s, Counter: %s\n", qmp.mapids[idx], msg.BucketId, msg.ETag)
-			qmp.maps[idx].ETagChan <- msg
-		}(m)
+	for msg := range channels.UpdateETag {
+		qmp.logger.Printf("[QueueMapPlane] Received UpdateETagMessage BucketId: %s, ETag: %s\n", msg.BucketId, msg.ETag)
+		idx := qmp.hashIdx(msg.BucketId)
+		qmp.logger.Printf("[QueueMapPlane] Delegating UpdateETagMessage to QM: %s, BucketId: %s, Counter: %s\n", qmp.mapids[idx], msg.BucketId, msg.ETag)
+		qmp.maps[idx].ETagChan <- msg
 	}
 }
 

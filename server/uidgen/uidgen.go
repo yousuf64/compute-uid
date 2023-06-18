@@ -9,11 +9,11 @@ import (
 	"strconv"
 	"sync"
 	"time"
+	"unique-id-generator/server/channels"
 	"unique-id-generator/server/flusher"
 	"unique-id-generator/server/flusherplane"
 	"unique-id-generator/server/messages"
 	"unique-id-generator/server/persistence"
-	"unique-id-generator/server/streams"
 )
 
 var ErrMaxLimitReached = errors.New("reached maximum for the day")
@@ -21,7 +21,7 @@ var ErrMaxLimitReached = errors.New("reached maximum for the day")
 type Metadata struct {
 	mu *sync.Mutex
 
-	*persistence.Counter
+	*persistence.Bucket
 }
 
 type UIDGen struct {
@@ -61,11 +61,11 @@ func (u *UIDGen) listenInvalidateBucketMsg() {
 		if ok {
 			md.mu.Lock()
 			go func() {
-				counter, err := u.persistence.GetCounter(context.Background(), msg.BucketId)
+				counter, err := u.persistence.GetBucket(context.Background(), msg.BucketId)
 				switch err {
 				case nil:
 					u.logger.Printf("[FLUSH] retrieved latest counter [bucketId: %s]\n", msg.BucketId)
-					md.Counter = counter
+					md.Bucket = counter
 				default:
 					u.logger.Printf("[FLUSH] failed to get counter, dumping counter from cache... [bucketId: %s]\n", msg.BucketId)
 					u.cache.Remove(msg.BucketId)
@@ -93,8 +93,8 @@ func (u *UIDGen) Generate(bucketId string) (uint64, error) {
 		u.logger.Printf("cache miss for bucketId: %s\n", bucketId)
 		// Read from cosmos.
 		md = &Metadata{
-			mu:      &sync.Mutex{},
-			Counter: nil,
+			mu:     &sync.Mutex{},
+			Bucket: nil,
 		}
 
 		u.logger.Printf("writing empty metadata on cache for bucketId: %s\n", bucketId)
@@ -108,12 +108,12 @@ func (u *UIDGen) Generate(bucketId string) (uint64, error) {
 			u.logger.Printf("found newly created entry on cache peek for bucketId: %s\n", bucketId)
 			md.mu.Lock() // Pauses racing goroutines.
 
-			counter, err := u.persistence.GetCounter(context.Background(), bucketId)
+			counter, err := u.persistence.GetBucket(context.Background(), bucketId)
 			switch err {
 			case nil:
-				md.Counter = counter
-			case persistence.ErrCounterNotFound:
-				md.Counter = &persistence.Counter{
+				md.Bucket = counter
+			case persistence.ErrBucketNotFound:
+				md.Bucket = &persistence.Bucket{
 					BucketId:  bucketId,
 					Counter:   0,
 					Timestamp: time.Now(),
@@ -129,22 +129,23 @@ func (u *UIDGen) Generate(bucketId string) (uint64, error) {
 		md.mu.Lock()
 	}
 
-	if md.Counter.Counter >= 999999 {
+	if md.Bucket.Counter >= 999999 {
 		return 0, ErrMaxLimitReached
 	}
 	if ok := isSameDate(md.Timestamp, time.Now()); ok {
-		md.Counter.Counter++
+		md.Bucket.Counter++
 		u.logger.Printf("incremented counter for bucketId: %s\n", bucketId)
 	} else {
 		md.Timestamp = time.Now()
-		md.Counter.Counter = 1
+		md.Bucket.Counter = 1
 		u.logger.Printf("reset counter for bucketId: %s\n", bucketId)
 	}
 
-	counter := md.Counter.Counter
-	streams.UpdateCounterMessage <- messages.UpdateCounterMessage{
-		BucketId: md.BucketId,
-		Counter:  counter,
+	counter := md.Bucket.Counter
+	channels.UpdateCounter <- &messages.UpdateCounterMessage{
+		BucketId:  md.BucketId,
+		Counter:   counter,
+		Timestamp: md.Bucket.Timestamp,
 	}
 	md.mu.Unlock()
 

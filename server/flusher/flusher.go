@@ -25,7 +25,7 @@ type Flusher struct {
 	id                   string
 	file                 *os.File
 	mu                   *sync.Mutex
-	counters             map[string]*persistence.Counter
+	counters             map[string]*persistence.Bucket
 	p                    *persistence.Persistence
 	invalidateBucketChan chan<- InvalidateBucketMessage
 	updateETagChan       chan<- UpdateETagMessage
@@ -37,7 +37,7 @@ func New(id string, p *persistence.Persistence, invalidateBucketChan chan<- Inva
 		id:                   id,
 		file:                 newLogFile(id),
 		mu:                   &sync.Mutex{},
-		counters:             make(map[string]*persistence.Counter),
+		counters:             make(map[string]*persistence.Bucket),
 		p:                    p,
 		invalidateBucketChan: invalidateBucketChan,
 		updateETagChan:       updateETagChan,
@@ -55,7 +55,7 @@ func newLogFile(flusherId string) *os.File {
 	return file
 }
 
-func (f *Flusher) Add(bucketId string, counter *persistence.Counter) {
+func (f *Flusher) Add(bucketId string, counter *persistence.Bucket) {
 	f.mu.Lock()
 	f.counters[bucketId] = counter
 
@@ -76,7 +76,7 @@ func (f *Flusher) Add(bucketId string, counter *persistence.Counter) {
 }
 
 func (f *Flusher) purge() {
-	f.counters = make(map[string]*persistence.Counter)
+	f.counters = make(map[string]*persistence.Bucket)
 	f.file = newLogFile(f.id)
 }
 
@@ -99,7 +99,7 @@ func (f *Flusher) flush() {
 	go func() {
 		f.logger.Printf("[FLUSH] starting flusher\n")
 		for bucketId, counter := range counters {
-			etag, err := f.p.SaveCounter(context.Background(), bucketId, counter, &azcosmos.ItemOptions{IfMatchEtag: &counter.ETag})
+			etag, err := f.p.UpsertBucket(context.Background(), bucketId, counter, &azcosmos.ItemOptions{IfMatchEtag: &counter.ETag})
 			switch err {
 			case nil:
 				f.logger.Printf("[FLUSH] flushed successfully [bucketId: %s, counter: %d]\n", bucketId, counter.Counter)

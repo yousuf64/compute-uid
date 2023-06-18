@@ -9,14 +9,13 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
-	"unique-id-generator/server/batcher"
-	"unique-id-generator/server/flusher"
+	"unique-id-generator/server/computeplane"
 	"unique-id-generator/server/flusherrecovery"
+	"unique-id-generator/server/flusherv2"
 	"unique-id-generator/server/persistence"
 	"unique-id-generator/server/queuemapplane"
 	"unique-id-generator/server/server"
 	"unique-id-generator/server/uidgen"
-	"unique-id-generator/server/virtualsvrplane"
 )
 
 func main() {
@@ -46,20 +45,20 @@ func main() {
 	frec := flusherrecovery.New(prs, logger)
 	frec.Recover()
 
-	invalidateBucketChan := make(chan flusher.InvalidateBucketMessage)
-	updateETagChan := make(chan flusher.UpdateETagMessage)
+	//invalidateBucketChan := make(chan flusher.InvalidateBucketMessage)
+	//updateETagChan := make(chan flusher.UpdateETagMessage)
 
 	//fp := flusherplane.New(2, prs, invalidateBucketChan, updateETagChan, logger)
-	uidGen := uidgen.New(cache, prs, invalidateBucketChan, updateETagChan, logger)
+	//uidGen := uidgen.New(cache, prs, invalidateBucketChan, updateETagChan, logger)
 
-	vsp := virtualsvrplane.New(2, prs, logger)
+	cp := computeplane.New(2, prs, logger)
 
 	queuemapplane.Listen(2, logger)
-	batcher.Listen(logger)
+	flusherv2.Listen(logger)
 
 	srv := http.Server{
 		Addr:    fmt.Sprintf(":%d", *port),
-		Handler: server.New(uidGen, vsp, logger),
+		Handler: server.New(cp, logger),
 	}
 
 	go func() {

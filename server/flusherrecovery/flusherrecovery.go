@@ -31,7 +31,7 @@ func (fr *FlusherRecovery) Recover() {
 		return
 	}
 
-	counters := make(map[string]*persistence.Counter)
+	counters := make(map[string]*persistence.Bucket)
 	files := make([]string, 0)
 
 	// TODO: Can process each file in parallel, merge into a single counter later
@@ -69,7 +69,7 @@ func (fr *FlusherRecovery) Recover() {
 			}
 			etag := azcore.ETag(parts[2])
 
-			counters[bucketId] = &persistence.Counter{
+			counters[bucketId] = &persistence.Bucket{
 				BucketId: bucketId,
 				Counter:  uint64(counter),
 				ETag:     etag,
@@ -80,7 +80,7 @@ func (fr *FlusherRecovery) Recover() {
 	}
 
 	for bucketId, counter := range counters {
-		_, err = fr.p.SaveCounter(context.Background(), bucketId, counter, &azcosmos.ItemOptions{IfMatchEtag: &counter.ETag})
+		_, err = fr.p.UpsertBucket(context.Background(), bucketId, counter, &azcosmos.ItemOptions{IfMatchEtag: &counter.ETag})
 		if err != nil {
 			fr.logger.Printf("failed to save this file")
 		}
