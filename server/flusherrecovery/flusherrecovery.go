@@ -70,9 +70,9 @@ func (fr *FlusherRecovery) Recover() {
 			etag := azcore.ETag(parts[2])
 
 			counters[bucketId] = &persistence.Counter{
-				Id:      bucketId,
-				Counter: uint64(counter),
-				ETag:    etag,
+				BucketId: bucketId,
+				Counter:  uint64(counter),
+				ETag:     etag,
 			}
 		}
 

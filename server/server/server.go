@@ -7,7 +7,9 @@ import (
 	"github.com/yousuf64/shift"
 	"log"
 	"net/http"
+	"sync/atomic"
 	"unique-id-generator/server/uidgen"
+	"unique-id-generator/server/virtualsvrplane"
 )
 
 const HeaderBucketId = "x-bucket-id"
@@ -16,13 +18,16 @@ type pvtShiftServer = *shift.Server
 
 type Server struct {
 	uidGen *uidgen.UIDGen
+	vsp    *virtualsvrplane.VirtualSvrPlane
 	logger *log.Logger
 
 	pvtShiftServer
 }
 
-func New(uidGen *uidgen.UIDGen, logger *log.Logger) *Server {
-	srv := &Server{uidGen: uidGen, logger: logger}
+func New(uidGen *uidgen.UIDGen, vsp *virtualsvrplane.VirtualSvrPlane, logger *log.Logger) *Server {
+	srv := &Server{uidGen: uidGen, vsp: vsp, logger: logger}
+
+	var counter = &atomic.Int32{}
 
 	r := shift.New()
 	r.Use(ErrorHandler)
@@ -49,7 +54,7 @@ func (srv *Server) generateUidHandler(w http.ResponseWriter, r *http.Request, ro
 		return err
 	}
 
-	id, err := srv.uidGen.Generate(bucketId)
+	id, err := srv.vsp.ComputeId(bucketId)
 	switch err {
 	case nil:
 		resp := UidResponse{Uid: id}

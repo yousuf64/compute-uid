@@ -11,7 +11,9 @@ import (
 	"time"
 	"unique-id-generator/server/flusher"
 	"unique-id-generator/server/flusherplane"
+	"unique-id-generator/server/messages"
 	"unique-id-generator/server/persistence"
+	"unique-id-generator/server/streams"
 )
 
 var ErrMaxLimitReached = errors.New("reached maximum for the day")
@@ -34,15 +36,15 @@ type UIDGen struct {
 func New(
 	cache *lru.Cache[string, *Metadata],
 	persistence *persistence.Persistence,
-	fp *flusherplane.FlusherPlane,
+	//fp *flusherplane.FlusherPlane,
 	invalidateBucketChan <-chan flusher.InvalidateBucketMessage,
 	updateETagChan <-chan flusher.UpdateETagMessage,
 	logger *log.Logger,
 ) *UIDGen {
 	gen := &UIDGen{
-		cache:                cache,
-		persistence:          persistence,
-		fp:                   fp,
+		cache:       cache,
+		persistence: persistence,
+		//fp:                   fp,
 		invalidateBucketChan: invalidateBucketChan,
 		updateETagChan:       updateETagChan,
 		logger:               logger,
@@ -112,7 +114,7 @@ func (u *UIDGen) Generate(bucketId string) (uint64, error) {
 				md.Counter = counter
 			case persistence.ErrCounterNotFound:
 				md.Counter = &persistence.Counter{
-					Id:        bucketId,
+					BucketId:  bucketId,
 					Counter:   0,
 					Timestamp: time.Now(),
 					ETag:      "",
@@ -132,15 +134,18 @@ func (u *UIDGen) Generate(bucketId string) (uint64, error) {
 	}
 	if ok := isSameDate(md.Timestamp, time.Now()); ok {
 		md.Counter.Counter++
-		log.Printf("incremented counter for bucketId: %s\n", bucketId)
+		u.logger.Printf("incremented counter for bucketId: %s\n", bucketId)
 	} else {
 		md.Timestamp = time.Now()
 		md.Counter.Counter = 1
-		log.Printf("reset counter for bucketId: %s\n", bucketId)
+		u.logger.Printf("reset counter for bucketId: %s\n", bucketId)
 	}
 
 	counter := md.Counter.Counter
-	u.fp.Add(bucketId, md.Counter)
+	streams.UpdateCounterMessage <- messages.UpdateCounterMessage{
+		BucketId: md.BucketId,
+		Counter:  counter,
+	}
 	md.mu.Unlock()
 
 	yyyy, mm, dd := md.Timestamp.Date()

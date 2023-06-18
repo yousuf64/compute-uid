@@ -15,9 +15,9 @@ var ErrCounterNotFound = errors.New("counter not found")
 var ErrETagNotMatched = errors.New("etag not matched")
 
 type Counter struct {
-	Id        string      `json:"id"`
+	BucketId  string      `json:"id"`
 	Counter   uint64      `json:"counter"`
-	Timestamp time.Time   `json:"_ts"`
+	Timestamp time.Time   `json:"timestamp"`
 	ETag      azcore.ETag `json:"_etag"`
 }
 
@@ -59,7 +59,7 @@ func (p *Persistence) GetCounter(ctx context.Context, bucketId string) (*Counter
 			return nil, err
 		}
 		return &Counter{
-			Id:        ctr.Id,
+			BucketId:  ctr.Id,
 			Counter:   ctr.Counter,
 			Timestamp: time.Unix(ctr.Timestamp, 0),
 			ETag:      azcore.ETag(ctr.ETag),
