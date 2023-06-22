@@ -54,7 +54,7 @@ func main() {
 	cp := computeplane.New(2, prs, logger)
 
 	queuemapplane.Listen(2, logger)
-	flusherv2.Listen(logger)
+	flusherv2.Listen(prs, logger)
 
 	srv := http.Server{
 		Addr:    fmt.Sprintf(":%d", *port),

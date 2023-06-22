@@ -84,11 +84,13 @@ func (qm *QueueMap) listen() {
 			qm.reset()
 
 			qm.logger.Printf("[QueueMap %s] Sending flush queue message...\n", qm.id)
-			channels.FlushQueue <- &messages.FlushQueueMessage{
-				QueueMapId: qm.id,
-				Filename:   filename,
-				Data:       m,
-			}
+			go func() {
+				channels.FlushQueue <- &messages.FlushQueueMessage{
+					QueueMapId: qm.id,
+					Filename:   filename,
+					Data:       m,
+				}
+			}()
 		}
 	}
 }

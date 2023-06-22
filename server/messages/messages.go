@@ -27,11 +27,11 @@ type FlushQueueMessage struct {
 }
 
 type BucketData struct {
-	Counter uint64
-	ETag    azcore.ETag
+	Counter   uint64
+	ETag      azcore.ETag
+	Timestamp time.Time
 }
 
 type InvalidateBucketMessage struct {
 	BucketId string
-	Data     *BucketData
 }
