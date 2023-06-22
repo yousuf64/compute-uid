@@ -4,7 +4,6 @@ import (
 	"context"
 	"flag"
 	"fmt"
-	"github.com/hashicorp/golang-lru/v2"
 	"log"
 	"net/http"
 	"os"
@@ -15,7 +14,6 @@ import (
 	"unique-id-generator/server/persistence"
 	"unique-id-generator/server/queuemapplane"
 	"unique-id-generator/server/server"
-	"unique-id-generator/server/uidgen"
 )
 
 func main() {
@@ -33,23 +31,12 @@ func main() {
 
 	logger := log.New(os.Stdout, "", 0)
 
-	cache, err := lru.New[string, *uidgen.Metadata](128)
-	if err != nil {
-		log.Fatal(cache)
-	}
-
 	client := CosmosClient()
 	countersContainer, err := client.NewContainer("unique-id", "counters")
 	prs := persistence.New(countersContainer, logger)
 
 	frec := flusherrecovery.New(prs, logger)
 	frec.Recover()
-
-	//invalidateBucketChan := make(chan flusher.InvalidateBucketMessage)
-	//updateETagChan := make(chan flusher.UpdateETagMessage)
-
-	//fp := flusherplane.New(2, prs, invalidateBucketChan, updateETagChan, logger)
-	//uidGen := uidgen.New(cache, prs, invalidateBucketChan, updateETagChan, logger)
 
 	cp := computeplane.New(2, prs, logger)
 
@@ -87,3 +74,5 @@ func main() {
 // TODO: Handle concurrency scenarios on cache remove (on errors).
 // TODO: Document TTL.
 // TODO: Cancel update token.
+// TODO: Handle stale cached counter
+// TODO: Another node could have a stale counter for the bucket (who may again end up being the handler), handle it

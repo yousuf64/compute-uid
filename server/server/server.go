@@ -8,8 +8,8 @@ import (
 	"log"
 	"net/http"
 	"sync/atomic"
+	"unique-id-generator/server/compute"
 	"unique-id-generator/server/computeplane"
-	"unique-id-generator/server/uidgen"
 )
 
 const HeaderBucketId = "x-bucket-id"
@@ -59,7 +59,7 @@ func (srv *Server) generateUidHandler(w http.ResponseWriter, r *http.Request, ro
 		resp := UidResponse{Uid: id}
 		srv.logger.Printf("replying %+v", resp)
 		return srv.Reply200(w, resp)
-	case uidgen.ErrMaxLimitReached:
+	case compute.ErrMaxLimitReached:
 		return NewErrorResponse(http.StatusConflict, "maximum reached")
 	default:
 		return err
