@@ -9,8 +9,8 @@ import (
 	"os"
 	"os/signal"
 	"unique-id-generator/server/computeplane"
+	"unique-id-generator/server/flusher"
 	"unique-id-generator/server/flusherrecovery"
-	"unique-id-generator/server/flusherv2"
 	"unique-id-generator/server/persistence"
 	"unique-id-generator/server/queuemapplane"
 	"unique-id-generator/server/server"
@@ -41,7 +41,7 @@ func main() {
 	cp := computeplane.New(2, prs, logger)
 
 	queuemapplane.Listen(2, logger)
-	flusherv2.Listen(prs, logger)
+	flusher.Listen(prs, logger)
 
 	srv := http.Server{
 		Addr:    fmt.Sprintf(":%d", *port),

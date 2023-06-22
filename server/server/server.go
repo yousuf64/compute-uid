@@ -30,20 +30,20 @@ func New(cp *computeplane.ComputePlane, logger *log.Logger) *Server {
 
 	r := shift.New()
 	r.Use(ErrorHandler)
-	r.GET("/generate-uid/:bucketId", srv.generateUidHandler)
+	r.GET("/compute/:bucketId", srv.ComputeHandler)
 
 	srv.pvtShiftServer = r.Serve()
 	return srv
 }
 
-func (srv *Server) generateUidHandler(w http.ResponseWriter, r *http.Request, route shift.Route) error {
-	headerBuckerId := r.Header.Get(HeaderBucketId)
-	if headerBuckerId == "" {
+func (srv *Server) ComputeHandler(w http.ResponseWriter, r *http.Request, route shift.Route) error {
+	headerBucketId := r.Header.Get(HeaderBucketId)
+	if headerBucketId == "" {
 		return NewErrorResponse(http.StatusBadRequest, fmt.Sprintf("%s expected in the header", HeaderBucketId))
 	}
 
 	bucketId := route.Params.Get("bucketId")
-	if headerBuckerId != bucketId {
+	if headerBucketId != bucketId {
 		return NewErrorResponse(http.StatusBadRequest, fmt.Sprintf("%s should match the :bucketId in the route", HeaderBucketId))
 	}
 
@@ -56,7 +56,7 @@ func (srv *Server) generateUidHandler(w http.ResponseWriter, r *http.Request, ro
 	id, err := srv.cp.ComputeId(bucketId)
 	switch err {
 	case nil:
-		resp := UidResponse{Uid: id}
+		resp := Response{Id: id}
 		srv.logger.Printf("replying %+v", resp)
 		return srv.Reply200(w, resp)
 	case compute.ErrMaxLimitReached:
@@ -77,6 +77,6 @@ func (srv *Server) Reply200(w http.ResponseWriter, response any) error {
 	return nil
 }
 
-type UidResponse struct {
-	Uid uint64 `json:"uid"`
+type Response struct {
+	Id uint64 `json:"id"`
 }

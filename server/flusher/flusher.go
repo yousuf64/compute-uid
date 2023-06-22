@@ -1,4 +1,4 @@
-package flusherv2
+package flusher
 
 import (
 	"context"
