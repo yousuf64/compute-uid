@@ -12,13 +12,18 @@ import (
 	"unique-id-generator/server/messages"
 )
 
+type counterData struct {
+	value uint64
+	ts    time.Time
+}
+
 type QueueMap struct {
 	id          string
 	logger      *log.Logger
 	counterChan <-chan *messages.UpdateCounterMessage
 	etagChan    <-chan *messages.UpdateETagMessage
 	flushChan   chan struct{}
-	counters    map[string]uint64
+	counters    map[string]*counterData
 	etags       map[string]azcore.ETag
 	logFile     *os.File
 }
@@ -33,7 +38,7 @@ func New(id string, logger *log.Logger) (*QueueMap, chan<- *messages.UpdateCount
 		counterChan: counterChan,
 		etagChan:    etagChan,
 		flushChan:   make(chan struct{}),
-		counters:    make(map[string]uint64),
+		counters:    make(map[string]*counterData),
 		etags:       make(map[string]azcore.ETag),
 		logFile:     newLogFile(id),
 	}
@@ -51,7 +56,14 @@ func (qm *QueueMap) listen() {
 			}
 
 			qm.logger.Printf("[QueueMap %s] Received message BucketId: %s, Counter: %v\n", qm.id, m.BucketId, m.Counter)
-			qm.counters[m.BucketId] = m.Counter
+			d, ok := qm.counters[m.BucketId]
+			if !ok {
+				d = &counterData{}
+				qm.counters[m.BucketId] = d
+			}
+			d.value = m.Counter
+			d.ts = m.Timestamp
+
 			qm.logToDisk(m)
 
 			if len(qm.counters) >= 5 {
@@ -75,8 +87,9 @@ func (qm *QueueMap) listen() {
 			m := make(map[string]*messages.BucketData, len(qm.counters))
 			for k, v := range qm.counters {
 				m[k] = &messages.BucketData{
-					Counter: v,
-					ETag:    qm.etags[k],
+					Counter:   v.value,
+					ETag:      qm.etags[k],
+					Timestamp: v.ts,
 				}
 			}
 
@@ -119,7 +132,7 @@ func (qm *QueueMap) reset() {
 		qm.logger.Printf("[QueueMap %s] Failed to close log file Error: %s\n", qm.id, err)
 	}
 	qm.logFile = newLogFile(qm.id)
-	qm.counters = make(map[string]uint64)
+	qm.counters = make(map[string]*counterData)
 }
 
 func newLogFile(id string) *os.File {

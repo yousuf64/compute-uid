@@ -57,7 +57,7 @@ func (srv *Server) ComputeHandler(w http.ResponseWriter, r *http.Request, route 
 	switch err {
 	case nil:
 		resp := Response{Id: id}
-		srv.logger.Printf("replying %+v", resp)
+		srv.logger.Printf("[Server] Replying %+v", resp)
 		return srv.Reply200(w, resp)
 	case compute.ErrMaxLimitReached:
 		return NewErrorResponse(http.StatusConflict, "maximum reached")

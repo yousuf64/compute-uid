@@ -41,7 +41,7 @@ func New(countersClient *azcosmos.ContainerClient, logger *log.Logger) *Persiste
 }
 
 func (p *Persistence) GetBucket(ctx context.Context, bucketId string) (*Bucket, error) {
-	p.logger.Printf("fetching bucket %s", bucketId)
+	p.logger.Printf("[PERSISTENCE] Fetching bucket BucketId: %s", bucketId)
 	response, err := p.countersClient.ReadItem(ctx, azcosmos.NewPartitionKeyString(bucketId), bucketId, nil)
 	if err != nil {
 		var responseErr *azcore.ResponseError
@@ -51,21 +51,20 @@ func (p *Persistence) GetBucket(ctx context.Context, bucketId string) (*Bucket, 
 			return nil, ErrBucketNotFound
 		}
 		return nil, err
-	} else {
-		var bkt *bucketTyp
-		err = json.NewDecoder(response.RawResponse.Body).Decode(&bkt)
-		if err != nil {
-			p.logger.Printf("decoding bucket %s failed", bucketId)
-			return nil, err
-		}
-		return &Bucket{
-			BucketId:  bkt.Id,
-			Counter:   bkt.Counter,
-			Timestamp: time.Unix(bkt.Timestamp, 0),
-			ETag:      azcore.ETag(bkt.ETag),
-		}, nil
 	}
 
+	var bkt *bucketTyp
+	err = json.NewDecoder(response.RawResponse.Body).Decode(&bkt)
+	if err != nil {
+		p.logger.Printf("[PERSISTENCE] Decoding bucket failed BucketId: %s", bucketId)
+		return nil, err
+	}
+	return &Bucket{
+		BucketId:  bkt.Id,
+		Counter:   bkt.Counter,
+		Timestamp: time.Unix(bkt.Timestamp, 0),
+		ETag:      azcore.ETag(bkt.ETag),
+	}, nil
 }
 
 func (p *Persistence) UpsertBucket(ctx context.Context, bucketId string, bucket *Bucket, options *azcosmos.ItemOptions) (etag azcore.ETag, err error) {

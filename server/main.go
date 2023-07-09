@@ -10,9 +10,9 @@ import (
 	"os/signal"
 	"unique-id-generator/server/computeplane"
 	"unique-id-generator/server/flusher"
-	"unique-id-generator/server/flusherrecovery"
 	"unique-id-generator/server/persistence"
 	"unique-id-generator/server/queuemapplane"
+	"unique-id-generator/server/recovery"
 	"unique-id-generator/server/server"
 )
 
@@ -35,8 +35,8 @@ func main() {
 	countersContainer, err := client.NewContainer("unique-id", "counters")
 	prs := persistence.New(countersContainer, logger)
 
-	frec := flusherrecovery.New(prs, logger)
-	frec.Recover()
+	rcv := recovery.New(prs, logger)
+	rcv.Run()
 
 	cp := computeplane.New(2, prs, logger)
 
