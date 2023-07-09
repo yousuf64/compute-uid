@@ -3,13 +3,13 @@ package recovery
 import (
 	"bufio"
 	"context"
+	"github.com/yousuf64/compute-uid/server/persistence"
 	"io"
 	"log"
 	"os"
 	"strconv"
 	"strings"
 	"time"
-	"unique-id-generator/server/persistence"
 )
 
 type Recovery struct {

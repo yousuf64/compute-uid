@@ -1,4 +1,4 @@
-module unique-id-generator/server
+module github.com/yousuf64/compute-uid/server
 
 go 1.20
 

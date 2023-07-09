@@ -4,12 +4,12 @@ import (
 	"fmt"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/google/uuid"
+	"github.com/yousuf64/compute-uid/server/channels"
+	"github.com/yousuf64/compute-uid/server/messages"
 	"log"
 	"math/rand"
 	"os"
 	"time"
-	"unique-id-generator/server/channels"
-	"unique-id-generator/server/messages"
 )
 
 type counterData struct {

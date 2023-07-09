@@ -5,13 +5,13 @@ import (
 	"errors"
 	"fmt"
 	lru "github.com/hashicorp/golang-lru/v2"
+	"github.com/yousuf64/compute-uid/server/channels"
+	"github.com/yousuf64/compute-uid/server/messages"
+	"github.com/yousuf64/compute-uid/server/persistence"
 	"log"
 	"strconv"
 	"sync"
 	"time"
-	"unique-id-generator/server/channels"
-	"unique-id-generator/server/messages"
-	"unique-id-generator/server/persistence"
 )
 
 var ErrMaxLimitReached = errors.New("reached maximum for the day")

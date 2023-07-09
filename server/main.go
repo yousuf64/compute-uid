@@ -4,16 +4,16 @@ import (
 	"context"
 	"flag"
 	"fmt"
+	"github.com/yousuf64/compute-uid/server/computeplane"
+	"github.com/yousuf64/compute-uid/server/flusher"
+	"github.com/yousuf64/compute-uid/server/persistence"
+	"github.com/yousuf64/compute-uid/server/queuemapplane"
+	"github.com/yousuf64/compute-uid/server/recovery"
+	"github.com/yousuf64/compute-uid/server/server"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
-	"unique-id-generator/server/computeplane"
-	"unique-id-generator/server/flusher"
-	"unique-id-generator/server/persistence"
-	"unique-id-generator/server/queuemapplane"
-	"unique-id-generator/server/recovery"
-	"unique-id-generator/server/server"
 )
 
 func main() {
@@ -32,7 +32,7 @@ func main() {
 	logger := log.New(os.Stdout, "", 0)
 
 	client := CosmosClient()
-	countersContainer, err := client.NewContainer("unique-id", "counters")
+	countersContainer, err := client.NewContainer("compute-uid", "counters")
 	prs := persistence.New(countersContainer, logger)
 
 	rcv := recovery.New(prs, logger)

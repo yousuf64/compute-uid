@@ -3,12 +3,12 @@ package flusher
 import (
 	"context"
 	"github.com/Azure/azure-sdk-for-go/sdk/data/azcosmos"
+	"github.com/yousuf64/compute-uid/server/channels"
+	"github.com/yousuf64/compute-uid/server/messages"
+	"github.com/yousuf64/compute-uid/server/persistence"
 	"log"
 	"os"
 	"sync"
-	"unique-id-generator/server/channels"
-	"unique-id-generator/server/messages"
-	"unique-id-generator/server/persistence"
 )
 
 func Listen(p *persistence.Persistence, logger *log.Logger) {

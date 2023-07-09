@@ -4,12 +4,11 @@ import (
 	"encoding/json"
 	"fmt"
 	"github.com/google/uuid"
+	"github.com/yousuf64/compute-uid/server/compute"
+	"github.com/yousuf64/compute-uid/server/computeplane"
 	"github.com/yousuf64/shift"
 	"log"
 	"net/http"
-	"sync/atomic"
-	"unique-id-generator/server/compute"
-	"unique-id-generator/server/computeplane"
 )
 
 const HeaderBucketId = "x-bucket-id"
@@ -25,8 +24,6 @@ type Server struct {
 
 func New(cp *computeplane.ComputePlane, logger *log.Logger) *Server {
 	srv := &Server{cp: cp, logger: logger}
-
-	var counter = &atomic.Int32{}
 
 	r := shift.New()
 	r.Use(ErrorHandler)

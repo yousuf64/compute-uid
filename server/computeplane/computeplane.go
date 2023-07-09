@@ -2,11 +2,11 @@ package computeplane
 
 import (
 	"fmt"
+	"github.com/yousuf64/compute-uid/server/channels"
+	"github.com/yousuf64/compute-uid/server/compute"
+	"github.com/yousuf64/compute-uid/server/persistence"
 	"hash/maphash"
 	"log"
-	"unique-id-generator/server/channels"
-	"unique-id-generator/server/compute"
-	"unique-id-generator/server/persistence"
 )
 
 type ComputePlane struct {

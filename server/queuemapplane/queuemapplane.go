@@ -2,12 +2,12 @@ package queuemapplane
 
 import (
 	"fmt"
+	"github.com/yousuf64/compute-uid/server/channels"
+	"github.com/yousuf64/compute-uid/server/messages"
+	"github.com/yousuf64/compute-uid/server/queuemap"
 	"hash/maphash"
 	"log"
 	"sync"
-	"unique-id-generator/server/channels"
-	"unique-id-generator/server/messages"
-	"unique-id-generator/server/queuemap"
 )
 
 type chanTuple struct {

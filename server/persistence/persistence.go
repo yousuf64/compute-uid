@@ -77,26 +77,26 @@ func (p *Persistence) UpsertBucket(ctx context.Context, bucketId string, bucket 
 
 	b, err := json.Marshal(bkt)
 	if err != nil {
-		p.logger.Printf("encoding bucket failed [bucketId: %s]", bucketId)
+		p.logger.Printf("[PERSISTENCE] Encoding bucket failed BucketId: %s", bucketId)
 		return etag, err
 	}
-	p.logger.Printf("upserting bucket [bucketId: %s]", bucketId)
+	p.logger.Printf("[PERSISTENCE] Upserting bucket BucketId: %s", bucketId)
 	resp, err := p.countersClient.UpsertItem(ctx, azcosmos.NewPartitionKeyString(bucketId), b, options)
 	etag = resp.ETag
 	switch err {
 	case nil:
 		return
 	case context.Canceled:
-		p.logger.Printf("bucket upsert cancelled [bucketId: %s]", bucketId)
+		p.logger.Printf("[PERSISTENCE] Bucket upsert cancelled BucketId: %s", bucketId)
 		return
 	default:
 		var responseErr *azcore.ResponseError
 		errors.As(err, &responseErr)
 		if responseErr != nil && responseErr.StatusCode == http.StatusPreconditionFailed {
-			p.logger.Printf("bucket etag not matched [bucketId: %s, etag: %s]", bucketId, string(*options.IfMatchEtag))
+			p.logger.Printf("[PERSISTENCE] Bucket ETag not matched BucketId: %s, ETag: %s", bucketId, string(*options.IfMatchEtag))
 			return etag, ErrETagNotMatched
 		}
-		p.logger.Printf("bucket upsert failed [bucketId: %s]", bucketId)
+		p.logger.Printf("[PERSISTENCE] Bucket upsert failed BucketId: %s, Err: %s", bucketId, err)
 		return etag, err
 	}
 }
