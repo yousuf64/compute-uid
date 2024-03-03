@@ -1,0 +1,20 @@
+apiVersion: projectcontour.io/v1
+kind: HTTPProxy
+metadata:
+  name: lb-compute-uid
+  namespace: default
+spec:
+  virtualhost:
+    fqdn: compute-uid.com
+  routes:
+    - conditions:
+        - prefix: /
+      services:
+        - name: compute-uid
+          port: 80
+      loadBalancerPolicy:
+        strategy: RequestHash
+        requestHashPolicies:
+          - headerHashOptions:
+              headerName: x-bucket-id
+            terminal: true
