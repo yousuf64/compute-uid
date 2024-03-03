@@ -24,14 +24,14 @@ type queueMapPlane struct {
 
 // Listen starts listening on streams.UpdateCounterMessage.
 // Forwards the message to the relevant queuemap.QueueMap channel by hashing the bucket id.
-func Listen(size int, logger *log.Logger) {
+func Listen(size int, walPath string, logger *log.Logger) {
 	(&sync.Once{}).Do(func() {
 		mapids := make([]string, size)
 		maps := make([]*chanTuple, size)
 
 		for i := 0; i < size; i++ {
 			id := fmt.Sprintf("qmap%d", i)
-			_, qmChan, etagChan := queuemap.New(id, logger)
+			_, qmChan, etagChan := queuemap.New(id, walPath, logger)
 			mapids[i] = id
 			maps[i] = &chanTuple{
 				QueueChan: qmChan,

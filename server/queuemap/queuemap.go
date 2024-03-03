@@ -1,6 +1,7 @@
 package queuemap
 
 import (
+	"errors"
 	"fmt"
 	"github.com/Azure/azure-sdk-for-go/sdk/azcore"
 	"github.com/google/uuid"
@@ -19,6 +20,7 @@ type counterData struct {
 
 type QueueMap struct {
 	id          string
+	walPath     string
 	logger      *log.Logger
 	counterChan <-chan *messages.UpdateCounterMessage
 	etagChan    <-chan *messages.UpdateETagMessage
@@ -28,19 +30,21 @@ type QueueMap struct {
 	logFile     *os.File
 }
 
-func New(id string, logger *log.Logger) (*QueueMap, chan<- *messages.UpdateCounterMessage, chan<- *messages.UpdateETagMessage) {
+func New(id string, walPath string, logger *log.Logger) (*QueueMap, chan<- *messages.UpdateCounterMessage, chan<- *messages.UpdateETagMessage) {
 	counterChan := make(chan *messages.UpdateCounterMessage)
 	etagChan := make(chan *messages.UpdateETagMessage)
+	ensureDir(walPath)
 
 	qm := &QueueMap{
 		id:          id,
+		walPath:     walPath,
 		logger:      logger,
 		counterChan: counterChan,
 		etagChan:    etagChan,
 		flushChan:   make(chan struct{}),
 		counters:    make(map[string]*counterData),
 		etags:       make(map[string]azcore.ETag),
-		logFile:     newLogFile(id),
+		logFile:     newLogFile(walPath, id),
 	}
 	go qm.listen()
 	go qm.timer()
@@ -120,7 +124,7 @@ func (qm *QueueMap) timer() {
 func (qm *QueueMap) logToDisk(m *messages.UpdateCounterMessage) {
 	_, err := qm.logFile.Write([]byte(fmt.Sprintf("%s|%d|%d\n", m.BucketId, m.Counter, m.Timestamp.UnixMilli())))
 	if err != nil {
-		qm.logger.Printf("[QueueMap %s] Failed to log to disk File: %s, BucketId: %s, Counter: %v\n", qm.id, qm.logFile.Name(), m.BucketId, m.Counter)
+		qm.logger.Printf("[QueueMap %s] Failed to log to disk File: %s, BucketId: %s, Counter: %v, Error: %s\n", qm.id, qm.logFile.Name(), m.BucketId, m.Counter, err)
 		return
 	}
 	qm.logger.Printf("[QueueMap %s] Logged to disk File: %s, BucketId: %s, Counter: %v\n", qm.id, qm.logFile.Name(), m.BucketId, m.Counter)
@@ -131,18 +135,27 @@ func (qm *QueueMap) reset() {
 	if err != nil {
 		qm.logger.Printf("[QueueMap %s] Failed to close log file Error: %s\n", qm.id, err)
 	}
-	qm.logFile = newLogFile(qm.id)
+	qm.logFile = newLogFile(qm.walPath, qm.id)
 	qm.counters = make(map[string]*counterData)
 }
 
-func newLogFile(id string) *os.File {
+func newLogFile(path string, id string) *os.File {
 	fid, err := uuid.NewUUID()
-	fname := fmt.Sprintf("wal/%s_%s", id, fid.String())
-	file, err := os.OpenFile(fname, os.O_CREATE, 0755)
+	fname := fmt.Sprintf("%s/%s_%s", path, id, fid.String())
+	file, err := os.OpenFile(fname, os.O_CREATE|os.O_WRONLY|os.O_APPEND, os.ModePerm)
 	if err != nil {
 		log.Fatal(err)
 	}
 	return file
+}
+
+func ensureDir(path string) {
+	if _, err := os.Stat(path); errors.Is(err, os.ErrNotExist) {
+		err := os.Mkdir(path, os.ModePerm)
+		if err != nil {
+			log.Println(err)
+		}
+	}
 }
 
 func randInRange(min, max int) int {

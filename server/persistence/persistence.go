@@ -47,7 +47,7 @@ func (p *Persistence) GetBucket(ctx context.Context, bucketId string) (*Bucket, 
 		var responseErr *azcore.ResponseError
 		errors.As(err, &responseErr)
 		if responseErr != nil && responseErr.StatusCode == http.StatusNotFound {
-			p.logger.Printf("bucket %s not found", bucketId)
+			p.logger.Printf("[PERSISTENCE] Bucket not found BucketId: %s", bucketId)
 			return nil, ErrBucketNotFound
 		}
 		return nil, err
@@ -96,7 +96,7 @@ func (p *Persistence) UpsertBucket(ctx context.Context, bucketId string, bucket 
 			p.logger.Printf("[PERSISTENCE] Bucket ETag not matched BucketId: %s, ETag: %s", bucketId, string(*options.IfMatchEtag))
 			return etag, ErrETagNotMatched
 		}
-		p.logger.Printf("[PERSISTENCE] Bucket upsert failed BucketId: %s, Err: %s", bucketId, err)
+		p.logger.Printf("[PERSISTENCE] Bucket upsert failed BucketId: %s, Error: %s", bucketId, err)
 		return etag, err
 	}
 }

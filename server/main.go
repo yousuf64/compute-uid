@@ -2,11 +2,12 @@ package main
 
 import (
 	"context"
-	"flag"
 	"fmt"
+	"github.com/Azure/azure-sdk-for-go/sdk/data/azcosmos"
 	"github.com/yousuf64/compute-uid/server/computeplane"
 	"github.com/yousuf64/compute-uid/server/flusher"
 	"github.com/yousuf64/compute-uid/server/persistence"
+	"github.com/yousuf64/compute-uid/server/provisioner"
 	"github.com/yousuf64/compute-uid/server/queuemapplane"
 	"github.com/yousuf64/compute-uid/server/recovery"
 	"github.com/yousuf64/compute-uid/server/server"
@@ -14,15 +15,45 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"strconv"
 )
 
 func main() {
-	port := flag.Int("port", 0, "server http port")
-	flag.Parse()
+	appPort := 80
+	cosmosAddr := "https://127.0.0.1:8081"
+	cosmosDatabaseId := "compute-uid"
+	cosmosContainerId := "counters"
+	walPath := "wal"
 
-	if *port == 0 {
-		log.Fatal("specify --port flag")
+	var err error
+	if portStr, ok := os.LookupEnv("APP_PORT"); ok {
+		appPort, err = strconv.Atoi(portStr)
+		if err != nil {
+			log.Fatal(err)
+		}
 	}
+
+	if cosmosAddrStr, ok := os.LookupEnv("COSMOS_ADDR"); ok {
+		cosmosAddr = cosmosAddrStr
+	}
+
+	if walPathStr, ok := os.LookupEnv("WAL_PATH"); ok {
+		walPath = walPathStr
+	}
+
+	if cosmosDatabaseIdStr, ok := os.LookupEnv("COSMOS_DATABASE_ID"); ok {
+		cosmosDatabaseId = cosmosDatabaseIdStr
+	}
+
+	if cosmosContainerIdStr, ok := os.LookupEnv("COSMOS_CONTAINER_ID"); ok {
+		cosmosContainerId = cosmosContainerIdStr
+	}
+
+	log.Println("APP_PORT =", appPort)
+	log.Println("COSMOS_ADDR =", cosmosAddr)
+	log.Println("COSMOS_DATABASE_ID =", cosmosDatabaseId)
+	log.Println("COSMOS_CONTAINER_ID =", cosmosContainerId)
+	log.Println("WAL_PATH =", walPath)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
 	defer stop()
@@ -31,8 +62,23 @@ func main() {
 
 	logger := log.New(os.Stdout, "", 0)
 
-	client := CosmosClient()
-	countersContainer, err := client.NewContainer("compute-uid", "counters")
+	client := CosmosClient(cosmosAddr)
+	err = provisioner.Provision(ctx, client, azcosmos.DatabaseProperties{ID: cosmosDatabaseId}, azcosmos.ContainerProperties{
+		ID: cosmosContainerId,
+		PartitionKeyDefinition: azcosmos.PartitionKeyDefinition{
+			Paths:   []string{"/id"},
+			Version: 1,
+		},
+		IndexingPolicy: &azcosmos.IndexingPolicy{
+			Automatic:    false,
+			IndexingMode: azcosmos.IndexingModeNone,
+		},
+	})
+	if err != nil {
+		log.Fatalf("Failed to provision the database %s Error: %s", cosmosDatabaseId, err)
+	}
+
+	countersContainer, err := client.NewContainer(cosmosDatabaseId, cosmosContainerId)
 	prs := persistence.New(countersContainer, logger)
 
 	rcv := recovery.New(prs, logger)
@@ -40,11 +86,11 @@ func main() {
 
 	cp := computeplane.New(2, prs, logger)
 
-	queuemapplane.Listen(2, logger)
+	queuemapplane.Listen(2, walPath, logger)
 	flusher.Listen(prs, logger)
 
 	srv := http.Server{
-		Addr:    fmt.Sprintf(":%d", *port),
+		Addr:    fmt.Sprintf(":%d", appPort),
 		Handler: server.New(cp, logger),
 	}
 
@@ -61,7 +107,7 @@ func main() {
 		close(idleConnsClosed)
 	}()
 
-	log.Printf("listening on port: %d", *port)
+	log.Printf("listening on port: %d", appPort)
 	if err = srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
 		log.Fatal(err)
 	}
